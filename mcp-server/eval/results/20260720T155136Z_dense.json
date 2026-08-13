@@ -1,0 +1,214 @@
+{
+  "mode": "dense",
+  "timestamp": "2026-07-20T15:51:36.668734+00:00",
+  "corpus_size": 0,
+  "golden_count": 20,
+  "aggregates": {
+    "overall": {
+      "n": 20,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    "keyword": {
+      "n": 8,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    "semantic": {
+      "n": 8,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    "mixed": {
+      "n": 4,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    }
+  },
+  "per_query": [
+    {
+      "query": "ERR_500 internal server error",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "pd-1234 ticket status",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "us-east-1 deployment region",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "@jsmith on call this week",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "JWT authentication decision",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "Docker image size too large",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "sprint velocity standup",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "bcrypt password hashing cost factor",
+      "query_type": "keyword",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "what did we decide about how users log in to the new service",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "why is the deployment pipeline not working",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "how is the team tracking against the sprint goal",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "what approach did we choose for storing passwords securely",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "who is responsible for the backend infrastructure this sprint",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "what was decided in the last architecture review",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "are there any unresolved action items from last week",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "what region is the service deployed to",
+      "query_type": "semantic",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "ERR_500 error in the auth service what is the root cause",
+      "query_type": "mixed",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "pd-1234 is this ticket resolved or still open",
+      "query_type": "mixed",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "Docker pipeline blocked who owns the fix",
+      "query_type": "mixed",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    {
+      "query": "JWT decision why did we not use OAuth instead",
+      "query_type": "mixed",
+      "relevant_ids": [],
+      "retrieved_ids": [],
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr_at_10": 0.0
+    }
+  ]
+}

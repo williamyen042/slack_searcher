@@ -1,0 +1,31 @@
+# SYNTHETIC — generated from representative Slack message content patterns.
+# All relevance judgements are provisional until verified against real corpus data.
+# Format: {"query": str, "relevant_ids": ["channel:ts", ...], "query_type": "keyword"|"semantic"|"mixed"}
+# query_type guide:
+#   keyword  — exact token match expected (error codes, usernames, service names, ticket IDs)
+#   semantic — paraphrase query where the matching message uses different wording
+#   mixed    — has both a keyword anchor and a semantic intent
+#
+# Split target: ~8 keyword, ~8 semantic, ~4 mixed = 20 entries.
+# To update relevant_ids: run `eval/run_eval.py --mode dense`, inspect top results,
+# replace placeholder IDs with real channel:ts values from your corpus.
+{"query": "ERR_500 internal server error", "relevant_ids": [], "query_type": "keyword"}
+{"query": "pd-1234 ticket status", "relevant_ids": [], "query_type": "keyword"}
+{"query": "us-east-1 deployment region", "relevant_ids": [], "query_type": "keyword"}
+{"query": "@jsmith on call this week", "relevant_ids": [], "query_type": "keyword"}
+{"query": "JWT authentication decision", "relevant_ids": [], "query_type": "keyword"}
+{"query": "Docker image size too large", "relevant_ids": [], "query_type": "keyword"}
+{"query": "sprint velocity standup", "relevant_ids": [], "query_type": "keyword"}
+{"query": "bcrypt password hashing cost factor", "relevant_ids": [], "query_type": "keyword"}
+{"query": "what did we decide about how users log in to the new service", "relevant_ids": [], "query_type": "semantic"}
+{"query": "why is the deployment pipeline not working", "relevant_ids": [], "query_type": "semantic"}
+{"query": "how is the team tracking against the sprint goal", "relevant_ids": [], "query_type": "semantic"}
+{"query": "what approach did we choose for storing passwords securely", "relevant_ids": [], "query_type": "semantic"}
+{"query": "who is responsible for the backend infrastructure this sprint", "relevant_ids": [], "query_type": "semantic"}
+{"query": "what was decided in the last architecture review", "relevant_ids": [], "query_type": "semantic"}
+{"query": "are there any unresolved action items from last week", "relevant_ids": [], "query_type": "semantic"}
+{"query": "what region is the service deployed to", "relevant_ids": [], "query_type": "semantic"}
+{"query": "ERR_500 error in the auth service what is the root cause", "relevant_ids": [], "query_type": "mixed"}
+{"query": "pd-1234 is this ticket resolved or still open", "relevant_ids": [], "query_type": "mixed"}
+{"query": "Docker pipeline blocked who owns the fix", "relevant_ids": [], "query_type": "mixed"}
+{"query": "JWT decision why did we not use OAuth instead", "relevant_ids": [], "query_type": "mixed"}
