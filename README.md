@@ -2,7 +2,7 @@
 
 Ask questions about your Slack workspace. A scheduled indexer keeps a local SQLite index of your messages and their embeddings; at query time the assistant searches that index (dense, BM25, or hybrid) and answers **only** from what it finds — every claim cited with a link back to the original message. If nothing relevant is found, it says so rather than guessing.
 
-> 🏆 **5th place / 93 teams** — built in 24 hours.
+> 🏆 **5th place / 93 teams** — IBM's company wide hackathon
 
 ---
 
