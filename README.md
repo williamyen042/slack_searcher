@@ -1,6 +1,6 @@
 # Slack Searcher — MCP-powered Slack search, grounded and cited
 
-Ask questions about your Slack workspace. The assistant retrieves real messages using RAG (OpenAI embeddings + cosine similarity, with optional BM25 and hybrid modes) and answers **only** from what it finds — every claim is cited with a link back to the original message. If nothing relevant is found, it says so rather than guessing.
+Ask questions about your Slack workspace. A scheduled indexer keeps a local SQLite index of your messages and their embeddings; at query time the assistant searches that index (dense, BM25, or hybrid) and answers **only** from what it finds — every claim cited with a link back to the original message. If nothing relevant is found, it says so rather than guessing.
 
 > 🏆 **5th place / 93 teams** — built in 24 hours.
 
@@ -18,24 +18,41 @@ Ask questions about your Slack workspace. The assistant retrieves real messages 
 
 ### How it works in plain steps
 
+There are two halves, and they run on completely different schedules.
+
+**Ahead of time — a scheduled job (every ~15 minutes):**
+
+```
+1. Fetch whatever has been posted since it last looked
+2. Break long messages into smaller readable pieces
+3. Convert each piece into a mathematical fingerprint (a vector)
+   that captures its meaning
+4. Save the pieces and their fingerprints to a local database file
+```
+
+It only does this for messages that are new or edited. Everything already saved is
+left alone, which is what keeps it cheap.
+
+**When you ask a question:**
+
 ```
 1. You type a question into the chat interface
 
 2. The assistant decides it needs to search Slack
 
 3. It calls a "search tool" which:
-   a. Pulls recent messages from your Slack channels
-   b. Breaks long messages into smaller readable pieces
-   c. Converts every piece into a mathematical fingerprint (a vector)
-      that captures its meaning
-   d. Compares your question's fingerprint to every message's fingerprint
-   e. Returns the most similar messages — ranked by how relevant they are
+   a. Converts your question into a fingerprint
+   b. Compares it against every saved fingerprint in the database
+   c. Returns the most similar messages — ranked by relevance
 
 4. The assistant reads those messages and writes an answer
    — citing each Slack message it used with a link
 
 5. You see the answer with clickable source links in the chat UI
 ```
+
+Nothing in step 3 talks to Slack, so answers come back fast no matter how big the
+workspace is. The trade: you only see messages as recent as the last indexing run.
 
 The key insight: **the search tool is the only door into your Slack data**. The model cannot go around it. This is what makes it trustworthy — the constraint is architectural, not just a polite instruction.
 
@@ -46,10 +63,15 @@ As the project evolved, three different ways of finding messages were built:
 | Mode | What it does | Best for |
 |---|---|---|
 | **Dense** (default) | Finds messages with similar *meaning*, even if they use different words | "What did we decide about security?" |
-| **BM25** | Finds messages containing the *exact words* you typed | `ERR_500`, `pd-1234`, `@username` |
+| **BM25** | Finds messages containing the *exact words* you typed | `ERR_500`, `pd-1234`, `us-east-1` |
 | **Hybrid** | Does both, then combines the rankings intelligently | Most real-world queries |
 
 Think of Dense as a librarian who understands context, and BM25 as a word-for-word text search. Hybrid uses both and picks the best results from each.
+
+> Searching for `@someone` does **not** find their Slack mentions. Slack stores a mention
+> as an internal user ID (`<@U0123ABC>`), which the indexer discards — so `@jsmith` only
+> matches messages where someone typed that name as ordinary text. See
+> [Roadmap](#roadmap--future-work).
 
 ---
 
@@ -79,17 +101,17 @@ Steady-state embedding cost is "messages written since the last run", not "the w
 
 ### The RAG pipeline in detail
 
-**Fetch (index time):** Messages are pulled from Slack via `conversations.history` (with thread replies via `conversations.replies`) or from an unzipped export folder. The stored per-channel cursor is passed as `oldest`, so each run fetches only new messages. Permalinks are built locally from the workspace URL (one cached `auth.test`) rather than one `chat.getPermalink` per message. Both modes produce the same message dict shape — one env var (`SLACK_EXPORT_PATH`) switches between them.
+**Fetch (index time):** Messages are pulled from Slack via `conversations.history` (with thread replies via `conversations.replies`) or from an unzipped export folder. Each run passes `oldest = cursor − INDEX_LOOKBACK_HOURS`, so it fetches new messages plus a rolling re-walk that catches replies and edits on recent threads (see [Why three schedules](#2-mcp-server)). Permalinks are built locally from the workspace URL (one cached `auth.test`) rather than one `chat.getPermalink` per message. Both modes produce the same message dict shape — one env var (`SLACK_EXPORT_PATH`) switches between them.
 
 **Chunk (index time):** Each message is split into overlapping token windows (350 tokens, 60-token overlap) using `tiktoken`'s `cl100k_base` — the identical tokeniser OpenAI's embedding model uses. Character-count or word-count splits are rejected because they don't respect token boundaries (one emoji = up to 4 tokens). Natural boundaries are respected: the splitter tries paragraph breaks first, then single newlines, then sentence boundaries, then words. Every chunk carries the complete original `full_text` so results returned to the model are never truncated.
 
 **Embed (index time):** Batched OpenAI calls of `EMBED_BATCH` chunks (default 256 — the API caps a request at 2048 inputs). Only chunks whose `text_hash` is new or changed are sent, so a re-run over an unchanged corpus makes zero API calls. `text-embedding-3-small` was chosen for setup simplicity — no project IDs, no region endpoints, one API key. Tradeoff: a hard dependency on OpenAI availability, and indexed message content leaves your network. If that isn't acceptable, swap `_embed()` for a locally-hosted model — it is the only function that needs to change.
 
-**Store (`index.py`):** SQLite, not a vector database. Brute-force cosine over a stored matrix is ~100 ms at a million chunks, so approximate nearest neighbour buys nothing at this size and costs a service to operate. `model` is part of the primary key, which makes mixing vectors from different embedding models structurally impossible rather than a thing you remember not to do. Deletions can't be detected by a forward-only cursor, so they need the slower `--reconcile` pass.
+**Store (`index.py`):** SQLite, not a vector database. Brute-force cosine over a stored matrix is ~100 ms at a million chunks, so approximate nearest neighbour buys nothing at this size and costs a service to operate. `model` is part of the primary key, which makes mixing vectors from different embedding models structurally impossible rather than a thing you remember not to do. A forward-only cursor can't see changes that don't move a timestamp — thread replies, edits, deletions — so the lookback window covers the first two and `--reconcile` covers the third. The index holds message text in plaintext; see [Data at rest](#data-at-rest).
 
-**Rank — `_rank_chunks()`:** Only the query is embedded. Cosine similarity against the stored vectors (not dot product — embedding magnitudes are not normalised, so dot product would favour longer messages regardless of relevance). Best-scoring chunk per `message_id` (dedup). Sort descending. `search_slack()` and the eval harness both read a `Store` and call this same function, so evaluation always measures the code that actually serves queries.
+**Rank — `_rank_chunks()`:** Only the query is embedded. Cosine similarity against the stored vectors. `text-embedding-3-small` already returns unit-length vectors, so cosine and dot product are equivalent *for this backend* — the explicit normalisation costs nothing on top of the matmul and means rankings don't silently change if `_embed()` is swapped for a model that doesn't normalise. Best-scoring chunk per `message_id` (dedup). Sort descending. `search_slack()` and the eval harness both read a `Store` and call this same function, so evaluation always measures the code that actually serves queries.
 
-**BM25 — `LexicalIndex`:** A `bm25s` wrapper built from the same chunk list in the same pass as the dense index. Addresses the failure mode where dense embeddings generalise exact tokens (`ERR_500` → "server error region") away from the literal string that needs to be found. Uses a hand-written Slack-aware tokeniser instead of NLTK/spaCy because standard NLP tokenisers split on hyphens and underscores — destroying `ERR_500`, `pd-1234`, `us-east-1`. No stemming, no stopword removal: short Slack queries need every word.
+**BM25 — `LexicalIndex`:** A `bm25s` wrapper over the same chunks the dense index loads, built once per index load rather than per query (corpus statistics only change when the corpus does). Addresses the failure mode where dense embeddings generalise exact tokens (`ERR_500` → "server error region") away from the literal string that needs to be found. Uses a hand-written Slack-aware tokeniser instead of NLTK/spaCy because standard NLP tokenisers split on hyphens and underscores — destroying `ERR_500`, `pd-1234`, `us-east-1`. No stemming, no stopword removal: short Slack queries need every word.
 
 **RRF — `_rrf_fuse()`:** Reciprocal Rank Fusion combines dense and BM25 ranked lists. Score normalisation (min-max then sum) is rejected because dense scores (cosine ~0–1) and BM25 scores (term frequency ~0–∞) are incommensurable — one outlier changes the normalisation of every other result. RRF works only on ranks: `score(d) = Σ 1/(k + rank)` over all lists containing `d`, ranks 1-based, k=60 (the empirically validated default from Cormack et al. 2009). Deterministic tie-break by ascending `message_id`.
 
@@ -111,16 +133,18 @@ Built in Phase 1, before any BM25 code, deliberately. The evaluation harness (`e
 
 ### Test architecture
 
-`server.py` imports `openai`, `slack_sdk`, and `fastmcp` at module load time — before any test setup runs. Module-level stubs install fake versions of those modules into `sys.modules` before `import server`, so the test suite runs with `OPENAI_API_KEY=fake-key` and zero network access. Ranking tests use deterministic hand-crafted 3-dimensional vectors mapped by keyword so ranking order is an exact assertion, not a probabilistic check that model updates could silently break.
+`server.py` imports `openai`, `slack_sdk`, and `fastmcp` at module load time — before any test setup runs. Module-level stubs install fake versions of those modules into `sys.modules` before `import server`, so the test suite runs with `OPENAI_API_KEY=fake-key` and zero network access. Ranking tests use deterministic hand-crafted 3-dimensional vectors mapped by keyword so ranking order is an exact assertion, not a probabilistic check that model updates could silently break. Tool tests build a real (temporary) SQLite index with those stubbed vectors and point `server.INDEX_PATH` at it, so they exercise the same store production reads rather than a mock of it.
 
 ### What's in the roadmap and why it's deferred
 
 | Item | Why deferred |
 |---|---|
-| Persistent vector index | Eliminates infra risk for a hackathon. The per-query rebuild breaks at ~50k chunks — documented as the next phase. |
+| Relevance threshold | Needs a different gate per retrieval mode and a filled-in golden set to calibrate against. Shipping an uncalibrated constant is worse than shipping none. |
 | Thread-level indexing | Thread is the unit of meaning in Slack; individual messages lose conversational context. Requires index schema changes. |
 | Cross-encoder reranking | Only justified if Phase 4 eval shows remaining semantic gap after hybrid. A reranker without a measured gap is wasted latency. |
 | Per-user permission filtering | Required before indexing any private channel. Cannot safely filter at query time without resolving caller identity → channel memberships. |
+| Per-user erasure (`--forget`) | No targeted delete path yet. See [Data at rest](#data-at-rest) for the manual workaround. |
+| `@mention` resolution | Needs a `users.list` ID→name map at index time, plus the `users:read` scope — a scope increase for a feature nobody has asked for yet. |
 
 ---
 
@@ -188,6 +212,8 @@ The serving process reads the index and nothing else, so it runs with no Slack t
 4. Invite the bot to the channels you want it to search: `/invite @your-bot-name`
 
 > **Access model — read this before inviting the bot anywhere.** The bot can only read channels it has been invited to, so channel access is controlled at *ingestion*. For now, only invite it to **public channels where participants have opted in**. This is safe because public-channel content is already visible to anyone in the workspace. Do **not** invite it to private or restricted channels yet — see [Roadmap](#roadmap--future-work) for why that requires query-time permission filtering first.
+>
+> Note that inviting the bot to a channel means its messages get **copied to disk** in the index, in plaintext. See [Data at rest](#data-at-rest).
 
 ### 2. MCP server
 
@@ -255,7 +281,11 @@ so no restart is needed.
 | `OPENAI_API_KEY` | Used for embeddings (`text-embedding-3-small` by default) |
 | `INDEX_PATH` | Where the SQLite index lives (default `mcp-server/slack_index.db`) |
 | `INDEX_LOOKBACK_HOURS` | How far before the cursor each incremental run re-walks (default 48) |
+| `EMBED_BATCH` | Chunks per embedding request while indexing (default 256; API caps at 2048) |
+| `OPENAI_EMBED_MODEL` | Embedding model (default `text-embedding-3-small`). Changing it re-embeds everything — vectors are namespaced by model |
 | `RETRIEVAL_MODE` | `dense` (default), `bm25`, or `hybrid` |
+| `MCP_TRANSPORT` / `PORT` | `sse` (default, port 8002) or `stdio` |
+| `CHUNK_SIZE_TOKENS` / `CHUNK_OVERLAP_TOKENS` / `MAX_MODEL_TOKENS` | Chunking knobs (350 / 60 / 512) |
 
 Only `index.py` needs `SLACK_BOT_TOKEN`. The serving process reads the index, so you can
 run it without one — `get_reactions` is the only tool that degrades (returns `[]`).
@@ -264,6 +294,8 @@ run it without one — `get_reactions` is the only tool that degrades (returns `
 > *indexed* — once per message, not once per query, and never again unless it's edited.
 > `bm25` mode is fully local at query time but still needs the index built. If message
 > content must not leave your network, replace `_embed()` with a self-hosted model.
+> Message text is also written to the index file in plaintext — see
+> [Data at rest](#data-at-rest) before pointing this at a workspace you don't own.
 
 ### 3. Web client
 
@@ -340,7 +372,7 @@ cd mcp-server
 OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 ```
 
-**115 tests, ~0.6s.**
+**122 tests, ~0.7s.**
 
 ### What is tested
 
@@ -356,10 +388,10 @@ OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 
 | Class | What it covers |
 |---|---|
-| `TestEmptyResults` | Every code path that must return `[]`: no channels configured, channel returns no messages, all messages are system subtypes, all messages have empty text, `SlackApiError` from `conversations.replies`, empty replies list, replies with no text |
-| `TestPermalinkGuarantee` | Every result from `search_slack` has a non-empty `permalink`; missing permalink on raw message triggers `_resolve_permalink_api` and is filled in; every `get_thread` reply has a permalink; output schema (`text`, `author`, `ts`, `permalink`) is complete |
-| `TestCosineSimilarityRanking` | Most-similar message ranks first; least-similar ranks last; `score` field is monotonically non-increasing; `limit` is respected regardless of corpus size; `_cosine_similarity` math (identical→1.0, opposite→−1.0, orthogonal→0.0, 53°→0.6) |
-| `TestRankChunksRouting` | `search_slack()` delegates to `_rank_chunks()` — verified via spy; a query embeds only the query text, never the corpus |
+| `TestEmptyResults` | Every code path that must return `[]`: empty index, channel filter matching nothing, all messages filtered as system subtypes, all messages empty text, unknown `thread_ts`, `get_thread` on an empty index, `get_reactions` with no Slack client |
+| `TestPermalinkGuarantee` | Every `search_slack` result has a non-empty `permalink`; `_permalink()` builds the URL locally with **zero** `chat.getPermalink` calls, and falls back to the API when the workspace URL is unavailable; every `get_thread` reply has a permalink; output schema complete; thread order is chronological |
+| `TestCosineSimilarityRanking` | Most-similar message ranks first; least-similar ranks last; `score` is monotonically non-increasing; `limit` respected regardless of corpus size; `channels` filter doesn't leak other channels; `_cosine_similarity` math (identical→1.0, opposite→−1.0, orthogonal→0.0, 53°→0.6) |
+| `TestRankChunksRouting` | `search_slack()` delegates to `_rank_chunks()` with one stored vector per chunk — verified via spy; a query makes exactly one embed call, for the query text alone |
 
 **`tests/test_bm25.py`** — BM25 tokeniser, lexical index, RRF fusion, mode switching
 
@@ -376,9 +408,10 @@ OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 |---|---|
 | `TestRoundTrip` | Chunks and vectors survive a write/read cycle; empty store; survives reopen; multi-chunk messages store every chunk with `full_text` intact |
 | `TestIncremental` | Re-indexing an unchanged corpus makes **zero** embedding calls; adding one message embeds exactly that message; re-indexing replaces rather than duplicates |
-| `TestEditsAndDeletes` | Edited text is re-embedded and replaces the old row; delete removes every chunk of a message; `message_ids()` is channel-scoped for `--reconcile` |
+| `TestEditsAndDeletes` | Edited text is re-embedded and replaces the old row; delete removes every chunk of a message; `message_ids()` is scoped by channel *and* by time, so a windowed `--reconcile` never deletes the history it didn't fetch |
 | `TestModelNamespacing` | Vectors from different models never mix; unknown model loads nothing; the same text under a second model is embedded again |
 | `TestCursorsAndThreads` | Cursor round-trip, survives reopen, per-channel; threads reconstruct parent + replies chronologically; channel metadata |
+| `TestLookbackWindow` | No cursor → full history; window starts exactly `hours` before the cursor; never goes negative; `0` reproduces cursor-only behaviour; a 48h window reaches back past a 24h-old thread parent |
 
 **`tests/test_eval.py`** — evaluation harness logic
 
@@ -394,10 +427,10 @@ OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 `server.py` is imported with all heavy dependencies stubbed before import:
 - `openai` → real module but pointed at `OPENAI_API_KEY=fake-key`; `_embed()` is patched per-test with deterministic hand-crafted vectors for ranking tests
 - `fastmcp` → no-op `FastMCP` class
-- `slack_sdk` → bare `WebClient` stub; individual tests use `unittest.mock.patch` to control `conversations_history`, `conversations_replies`, and `chat_getPermalink` responses
+- `slack_sdk` → bare `WebClient` stub; the query path never calls Slack, so tool tests seed a temp index instead of mocking API responses
 - `dotenv` → no-op `load_dotenv` (accepts `**kwargs` so `load_dotenv(dotenv_path=...)` calls don't fail)
 
-No `.env` file is needed to run the tests.
+No `.env` file, no Slack token, and no index file are needed to run the tests — each test builds its own in a temp directory and deletes it afterwards.
 
 ---
 
@@ -409,7 +442,7 @@ No `.env` file is needed to run the tests.
 
 ## How grounding is enforced
 
-1. **Retrieval first:** `search_slack` fetches real Slack messages and ranks them against the query.
+1. **Retrieval first:** `search_slack` ranks real indexed Slack messages against the query and returns them with their permalinks.
 2. **Grounded system prompt:** the model is explicitly instructed to answer only from the tool's returned context — not from training data.
 3. **Citation required:** Every claim must include a `[source](permalink)` link. If no relevant messages are found, the response is: *"I couldn't find anything in Slack about that."*
 
@@ -433,8 +466,9 @@ These are the things standing between "scoped pilot" and "tool a workspace can s
 
 ### 2. ~~Persistent embedding store~~ — done, see `index.py`
 
-Shipped. Model-namespaced vectors, `text_hash` edit detection, per-channel cursors, and
-`--reconcile` for deletions. What's left on this thread:
+Shipped. Model-namespaced vectors, `text_hash` edit detection, per-channel cursors, a
+lookback window for thread replies and edits, and `--reconcile` for deletions. What's left
+on this thread:
 
 - **Relevance threshold.** `search_slack` still returns its top-K regardless of match
   quality. A single constant across modes is incoherent — cosine has an absolute scale,
@@ -445,6 +479,8 @@ Shipped. Model-namespaced vectors, `text_hash` edit detection, per-channel curso
   would make the dense leg O(candidates). Worth measuring before it becomes the default.
 - **`float16` vectors.** Halves resident memory (~800 MB → ~400 MB at 100k messages) for
   negligible recall loss, if that ever matters.
+- **`index.py --forget`.** A targeted delete path for erasure requests. Today that means
+  hand-writing SQL against the index — see [Data at rest](#data-at-rest).
 
 ### 3. Consent mechanism for channel inclusion (process, not just code)
 
@@ -492,10 +528,39 @@ No user tokens, no admin tokens, and no impersonation or write scopes (`chat:wri
 
 | Question | Answer for this project |
 |---|---|
-| What data does it read? | Message text, author IDs, timestamps, and permalinks from public channels the bot is explicitly invited to |
-| Where does that data go? | To the embeddings provider on every query in `dense`/`hybrid` mode, and to the LLM host as tool output. `bm25` mode keeps retrieval local |
-| Is it stored? | No. Nothing is persisted — the index is rebuilt in memory per query and discarded |
-| Does it process personal information? | Assume yes. Slack messages routinely contain names, email references, and project details |
-| Does it write to Slack? | No. Read-only |
+| What data does it read? | Message text, author IDs, timestamps, thread IDs, and permalinks from public channels the bot is explicitly invited to |
+| Where does that data go? | Message text is sent to the embeddings provider **at index time** — once per message, and again only if it is edited. Retrieved messages are sent to the LLM host as tool output on the queries that surface them. |
+| **Is it stored?** | **Yes.** A SQLite file (`INDEX_PATH`, default `mcp-server/slack_index.db`) holds the full text of every indexed message, its metadata, and its embedding vector — see [Data at rest](#data-at-rest) below. |
+| How long is it kept? | Indefinitely, until the file is deleted or `--reconcile` observes the message gone from Slack. |
+| Does it process personal information? | Assume yes, **and it is retained at rest**. Slack messages routinely contain names, email references, and project details. |
+| Does it write to Slack? | No. Read-only. |
 
-Scope the bot to the minimum set of channels necessary and document that scoping wherever your org records data-processing decisions.
+### Data at rest
+
+Earlier versions rebuilt the index in memory per query and kept nothing. That was a real
+security property, and moving to a persistent index gave it up in exchange for cost and
+latency. Be straight with your reviewer about the trade:
+
+**What the index file contains.** One row per chunk: `full_text` (the complete original
+message), `chunk_text`, `author`, `channel`, `ts`, `thread_ts`, `permalink`, and a
+float32 embedding vector. It is not a hash or a digest — the message text is recoverable
+in plaintext by anyone who can read the file. Treat it with the same care as a Slack
+export.
+
+**Protecting it.** The file has no access control of its own; it inherits the
+filesystem's. Put it on an encrypted volume, restrict it to the service account that runs
+the indexer and server, and keep it out of backups that travel somewhere less protected.
+It is gitignored by default — do not commit it.
+
+**Deletion lag.** A message deleted in Slack stays searchable until a `--reconcile` run
+observes it missing. With the schedule above that is up to a day for recent messages and
+up to a week for older ones. If someone deletes a message because it should never have
+been posted, that lag is your exposure window — run `index.py --reconcile` immediately
+rather than waiting for cron, or delete the index file and rebuild.
+
+**Right to erasure.** There is no per-user delete path. Removing one person's messages
+means deleting the index and re-indexing without their channels, or writing a targeted
+`DELETE FROM chunks WHERE author = ?` against the SQLite file.
+
+Scope the bot to the minimum set of channels necessary and document both that scoping and
+the retention answers above wherever your org records data-processing decisions.

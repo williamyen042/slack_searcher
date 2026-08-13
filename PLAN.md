@@ -2,6 +2,11 @@
 
 **24h · 2 people (TS/full-stack + Python/backend) · Minimal demo interface · Recorded video demo**
 
+> **Historical document.** This is the original 24-hour build plan, kept as a record of
+> what was scoped and why. Parts of it no longer describe the code — notably the
+> in-memory-per-query index under "Cut", which has since been replaced by a persistent
+> SQLite index (`mcp-server/index.py`). See `CHANGELOG.md` for what actually shipped.
+
 ---
 
 ## 0 · Enhancement Framing
