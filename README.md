@@ -2,7 +2,7 @@
 
 Ask questions about your Slack workspace. The assistant retrieves real messages using RAG (OpenAI embeddings + cosine similarity, with optional BM25 and hybrid modes) and answers **only** from what it finds — every claim is cited with a link back to the original message. If nothing relevant is found, it says so rather than guessing.
 
-> 🏆 **5th place / 93 teams** — built in 24 hours.
+> 🏆 **5th place / 93 teams** — IBM's company wide hackathon
 
 ---
 
