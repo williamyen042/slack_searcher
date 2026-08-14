@@ -317,49 +317,64 @@ npm run dev
 
 ### 4. MCP client connection
 
-A `.mcp.json` at the workspace root registers the MCP server with your MCP client.
-Choose the transport that matches how you're running the server:
+`.mcp.json` at the repo root registers the server with any MCP client. It is checked in
+and holds **no secrets** — `server.py` loads `mcp-server/.env` from its own directory, so
+credentials never need to appear in this file.
 
-**Option A — stdio (recommended for local dev)**
+**Option A — stdio (recommended)**
 
-The client launches the Python process directly. No separate `python server.py` step needed.
+The client launches the Python process itself; no separate `python server.py` needed.
 
 ```json
 {
   "mcpServers": {
-    "slack-search-mcp": {
-      "command": "/path/to/your/venv/bin/python",
-      "args": ["/path/to/slack_searcher/mcp-server/server.py"],
-      "env": {
-        "MCP_TRANSPORT": "stdio",
-        "SLACK_BOT_TOKEN": "xoxb-your-bot-token",
-        "SLACK_CHANNEL_IDS": "C0123ABCDEF,C0456GHIJKL",
-        "OPENAI_API_KEY": "sk-your-openai-api-key"
-      }
+    "slack-search": {
+      "command": "/absolute/path/to/mcp-server/.venv/bin/python",
+      "args": ["/absolute/path/to/mcp-server/server.py"],
+      "env": { "MCP_TRANSPORT": "stdio" }
     }
   }
 }
 ```
 
-Replace `/path/to/your/venv/bin/python` with the absolute path to the Python interpreter inside your virtualenv (e.g. the output of `which python` when the venv is active). Replace `/path/to/slack_searcher` with the absolute path to this repo on your machine.
+Use absolute paths — the client's working directory is not guaranteed to be the repo root.
 
 **Option B — HTTP/SSE (if running the server separately)**
 
-Start the server first (`python server.py` — defaults to port 8002), then point the client at it:
+Start `python server.py` (port 8002), then:
 
 ```json
 {
   "mcpServers": {
-    "slack-search-mcp": {
-      "url": "http://localhost:8002/sse"
-    }
+    "slack-search": { "url": "http://localhost:8002/sse" }
   }
 }
 ```
 
-> **Secrets note:** `.mcp.json` is gitignored. Never commit real tokens here — use the `env` block in the stdio config or set environment variables before starting the SSE server.
+#### Claude Code
 
-Confirm the `slack-search-mcp` server appears in your client's MCP panel before running the demo.
+`.mcp.json` at the repo root is exactly Claude Code's project-scope format, so opening
+this repo is enough. Project-scoped servers need a one-time approval:
+
+```bash
+claude mcp list          # shows: slack-search - ⏸ Pending approval
+claude                   # approve when prompted
+claude mcp list          # shows: ✔ Connected
+```
+
+This works the same in the terminal and in the VS Code / JetBrains extensions — they read
+the same config. Claude Desktop is separate: it reads
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) and does not
+pick up project `.mcp.json`, so paste the same `mcpServers` block there instead.
+
+**Grounding without a custom system prompt.** The web client injects a grounding system
+prompt (`web-client/src/app/api/chat/route.ts`), but an IDE host has no such hook. That is
+what `FastMCP(instructions=...)` in `server.py` is for — the MCP client reads it before any
+tool call, so the cite-every-claim and say-nothing-if-empty rules travel with the server
+rather than with one particular front end. Verified present in the `initialize` response.
+
+With an IDE host wired up, `web-client/` is optional — it is a standalone demo UI, not a
+dependency of the MCP server.
 
 ## Tests
 

@@ -3,3 +3,4 @@
 .mcp.json
 slack_index.db
 *.db
+*.egg-info/

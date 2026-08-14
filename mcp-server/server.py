@@ -50,7 +50,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("slack-search-mcp")
 
-load_dotenv()
+# Resolve .env next to this file, not relative to the process CWD — an MCP
+# client launching server.py over stdio sets CWD to the project root, not here.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # ---------------------------------------------------------------------------
 # Configuration
