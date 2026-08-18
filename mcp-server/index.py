@@ -22,12 +22,15 @@ instead of "the whole workspace, every query".
 
 Usage
 -----
-    python index.py                      # incremental: all configured channels
-    python index.py --channels C01,C02   # incremental: named channels only
-    python index.py --lookback-hours 336            # re-walk the last 2 weeks
-    python index.py --reconcile --lookback-hours 336 # + drop deletions in that window
-    python index.py --reconcile                     # full history deep clean
-    python index.py --stats              # what's in the index right now
+Run it with the virtualenv's interpreter — the dependencies are not on the
+system Python (`.venv/bin/python`, or activate the venv first):
+
+    .venv/bin/python index.py                       # incremental: configured channels
+    .venv/bin/python index.py --channels C01,C02    # incremental: named channels only
+    .venv/bin/python index.py --lookback-hours 336  # re-walk the last 2 weeks
+    .venv/bin/python index.py --reconcile --lookback-hours 336  # + deletions in window
+    .venv/bin/python index.py --reconcile           # full history deep clean
+    .venv/bin/python index.py --stats               # what's in the index right now
 
 Design notes
 ------------

@@ -173,7 +173,7 @@ The serving process reads the index and nothing else, so it runs with no Slack t
 .
 ├── mcp-server/
 │   ├── server.py              # FastMCP server — MCP tools + ranking (reads the index)
-│   ├── index.py               # SQLite chunk/vector store + `python index.py` indexer
+│   ├── index.py               # SQLite chunk/vector store + the indexer CLI
 │   ├── pyproject.toml         # Python deps (includes bm25s)
 │   ├── .env.example           # All env vars documented with defaults
 │   ├── eval/
@@ -221,18 +221,33 @@ The serving process reads the index and nothing else, so it runs with no Slack t
 
 ```bash
 cd mcp-server
+
+# 1. Create the virtualenv and install into it
+python3 -m venv .venv
+.venv/bin/pip install -e .
+
+# 2. Configure
 cp .env.example .env
-# Fill in .env with your tokens and channel IDs
-pip install -e .
+# Fill in .env: OPENAI_API_KEY, SLACK_BOT_TOKEN, SLACK_CHANNEL_IDS
 
-# 1. Build the index (first run embeds the whole corpus; later runs only the delta)
-python index.py
-python index.py --stats      # what's in there now
+# 3. Build the index (first run embeds everything; later runs only the delta)
+.venv/bin/python index.py
+.venv/bin/python index.py --stats     # confirm messages > 0
 
-# 2. Serve it
-python server.py
+# 4. Serve it
+.venv/bin/python server.py
 # Server runs on http://localhost:8002/sse
 ```
+
+> **macOS / zsh:** there is no bare `python` or `pip` — only `python3`. And system
+> `python3` won't work here either, because the dependencies live in `.venv`. Calling
+> `.venv/bin/python` directly (as above) always works. If you'd rather type plain
+> `python`, run `source .venv/bin/activate` first and it will refer to the venv for the
+> rest of that shell session.
+
+An empty index is not an error — `search_slack` returns `[]` and the assistant correctly
+says it found nothing. If searches come back empty, check `index.py --stats` before
+suspecting the MCP connection.
 
 Keep the index fresh with cron — searches only see what has been indexed:
 
@@ -325,7 +340,7 @@ credentials never need to appear in this file.
 
 **Option A — stdio (recommended)**
 
-The client launches the Python process itself; no separate `python server.py` needed.
+The client launches the Python process itself; no separate `.venv/bin/python server.py` needed.
 
 ```json
 {
@@ -343,7 +358,7 @@ Use absolute paths — the client's working directory is not guaranteed to be th
 
 **Option B — HTTP/SSE (if running the server separately)**
 
-Start `python server.py` (port 8002), then:
+Start `.venv/bin/python server.py` (port 8002), then:
 
 ```json
 {
