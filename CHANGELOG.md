@@ -24,8 +24,18 @@ Notable changes to Slack Searcher. Newest first.
     just a window when combined with `--lookback-hours` — deletion detection is bounded
     to whatever window was actually walked, so a windowed reconcile never mistakes
     unfetched history for deleted messages. `--stats` prints what is currently indexed.
-- `tests/test_index.py` — 20 tests covering round-trip, incremental skip, edits,
-  deletes, model namespacing, cursors, and thread reconstruction.
+- `tests/test_index.py` — 21 tests covering round-trip, incremental skip, edits,
+  deletes, model namespacing, cursors, thread reconstruction, and the lookback window.
+- `tests/test_mcp_protocol.py` — 17 tests that launch `server.py` as a subprocess and
+  speak real JSON-RPC 2.0 over stdio. Every other test file stubs `fastmcp.FastMCP` with
+  a no-op, so nothing previously verified that this is an MCP server at all — only that
+  its Python functions worked. Covers the handshake, `instructions` delivery, tool
+  discovery and schemas, live invocation against a seeded index, and error handling.
+  Stays offline by running the subprocess in `bm25` mode.
+- `.mcp.json` at the repo root — Claude Code project-scope MCP config, secret-free.
+- `.vscode/mcp.json` — VS Code's native MCP client uses a different schema (`servers` with
+  an explicit `type`, not `mcpServers`) and does not read `.mcp.json`. Uses
+  `${workspaceFolder}`, so it survives being cloned to a different path.
 - `search_slack` accepts a `channels` filter that narrows to indexed channels.
 - `INDEX_PATH` and `EMBED_BATCH` environment variables.
 
@@ -49,6 +59,15 @@ Notable changes to Slack Searcher. Newest first.
 
 ### Fixed
 
+- **BM25 returned zero-score documents as results.** `bm25s` pads its top-k, so a query
+  whose terms appear in no document still came back with k "hits" scoring 0.0 — messages
+  with no lexical relationship to the query at all, handed to the model as if relevant.
+  Found by the new protocol test. This is not the calibrated relevance threshold (still
+  open); zero term overlap needs no calibration.
+- **`load_dotenv()` resolved `.env` from the process CWD.** An MCP client launching
+  `server.py` over stdio sets CWD to the project root, so `mcp-server/.env` was never
+  found and the server died on a missing `OPENAI_API_KEY`. It now resolves relative to
+  `server.py` itself, which is also why `.mcp.json` needs no secrets in it.
 - **Permalinks cost N sequential API calls per query.** `search_slack` issued one
   `chat.getPermalink` per message, serially — seconds to minutes of latency on any
   real corpus, plus rate limiting. Permalinks are deterministic, so they are now built

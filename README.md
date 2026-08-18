@@ -196,7 +196,9 @@ The serving process reads the index and nothing else, so it runs with no Slack t
 │   └── .env.local.example
 ├── overview/
 │   └── index.html             # Static project overview page (open in browser)
-└── .mcp.json                  # Registers the MCP server with your MCP client
+├── .mcp.json                  # MCP config for Claude Code (key: mcpServers)
+└── .vscode/
+    └── mcp.json               # MCP config for VS Code's own client (key: servers)
 ```
 
 ## Setup
@@ -362,10 +364,46 @@ claude                   # approve when prompted
 claude mcp list          # shows: ✔ Connected
 ```
 
+To verify the server speaks MCP correctly without any client at all, run the protocol
+conformance suite — it launches `server.py` and performs a real handshake:
+
+```bash
+cd mcp-server && OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/test_mcp_protocol.py -v
+```
+
 This works the same in the terminal and in the VS Code / JetBrains extensions — they read
-the same config. Claude Desktop is separate: it reads
+the same config. Note that the extension contributes a chat panel to the Activity Bar, not
+an MCP browser: servers are listed with `/mcp` inside that panel, and the visible proof
+that this is wired up is a `search_slack` tool call appearing in the transcript.
+
+Claude Desktop is separate: it reads
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) and does not
 pick up project `.mcp.json`, so paste the same `mcpServers` block there instead.
+
+#### VS Code native MCP (Copilot agent mode)
+
+VS Code has its own MCP client, independent of the Claude Code extension, and it reads a
+**different file with a different schema** — `.vscode/mcp.json`, keyed on `servers` rather
+than `mcpServers`, with an explicit `type`:
+
+```json
+{
+  "servers": {
+    "slack-search": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/mcp-server/.venv/bin/python",
+      "args": ["${workspaceFolder}/mcp-server/server.py"],
+      "env": { "MCP_TRANSPORT": "stdio" }
+    }
+  }
+}
+```
+
+Both files are checked in. They are not redundant — they serve two different clients, and
+neither reads the other's. `.vscode/mcp.json` can use `${workspaceFolder}`, so it survives
+being cloned anywhere; `.mcp.json` cannot (Claude Code expands environment variables, not
+VS Code's workspace tokens), which is why that one carries absolute paths you'll want to
+edit on a new machine.
 
 **Grounding without a custom system prompt.** The web client injects a grounding system
 prompt (`web-client/src/app/api/chat/route.ts`), but an IDE host has no such hook. That is
@@ -387,7 +425,7 @@ cd mcp-server
 OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 ```
 
-**122 tests, ~0.7s.**
+**139 tests, ~2.4s.**
 
 ### What is tested
 
@@ -427,6 +465,21 @@ OPENAI_API_KEY=fake-key .venv/bin/python -m pytest tests/ -v
 | `TestModelNamespacing` | Vectors from different models never mix; unknown model loads nothing; the same text under a second model is embedded again |
 | `TestCursorsAndThreads` | Cursor round-trip, survives reopen, per-channel; threads reconstruct parent + replies chronologically; channel metadata |
 | `TestLookbackWindow` | No cursor → full history; window starts exactly `hours` before the cursor; never goes negative; `0` reproduces cursor-only behaviour; a 48h window reaches back past a 24h-old thread parent |
+
+**`tests/test_mcp_protocol.py`** — is this actually an MCP server?
+
+Every other test file stubs `fastmcp.FastMCP` with a no-op, so they verify the *functions*
+and never the protocol. This file launches `server.py` as a real subprocess and speaks
+JSON-RPC 2.0 to it over stdio, exactly as an MCP client does. It stays offline by
+pre-building the index in-process and running the subprocess in `bm25` mode, whose query
+path never calls OpenAI.
+
+| Group | What it covers |
+|---|---|
+| Handshake | `initialize` returns valid JSON-RPC; `serverInfo.name`; protocol version negotiated; `tools` capability declared; the grounding `instructions` block reaches the client |
+| Discovery | All four tools listed; each has a description and an object schema; required arguments declared correctly |
+| Invocation | `search_slack` returns real indexed results with the full citation schema; `channels` filter holds over the wire; `get_thread` returns parent + reply in order; `list_channels`; `get_reactions` degrades to `[]` with no token; no-match returns `[]` not an error |
+| Errors | An unknown tool is reported rather than crashing, and the server still answers afterwards |
 
 **`tests/test_eval.py`** — evaluation harness logic
 

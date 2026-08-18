@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets and local config
+.env
+.env.local
+
+# Built artifacts — the index is rebuilt by `python index.py`
+*.db
+
+# Node
+node_modules/
+.next/
+
+# OS
+.DS_Store

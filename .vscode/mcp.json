@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "slack-search": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/mcp-server/.venv/bin/python",
+      "args": ["${workspaceFolder}/mcp-server/server.py"],
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}

@@ -376,6 +376,13 @@ class LexicalIndex:
         best: dict[str, tuple[float, object]] = {}
         for chunk, score in zip(results[0], scores[0]):
             s = float(score)
+            # A BM25 score of 0 means not one query term appeared in this chunk.
+            # bm25s pads its top-k with those, and returning them hands the model
+            # documents with no lexical relationship to the query at all.  This is
+            # not the calibrated relevance threshold (still open — see README);
+            # it needs no calibration, because zero overlap is unambiguous.
+            if s <= 0.0:
+                continue
             if chunk.message_id not in best or s > best[chunk.message_id][0]:
                 best[chunk.message_id] = (s, chunk)
 
